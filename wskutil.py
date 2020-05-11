@@ -84,7 +84,7 @@ def request(method, urlString, body = '', headers = {}, auth = None, verbose = F
             print('Body received:')
             print(res.read())
             print('========')
-        return res.read().decode() #res
+        return res
     except socket.timeout:
         return ErrorResponse(status = 500, error = 'request timed out at %d seconds' % timeout)
     except Exception as e:
