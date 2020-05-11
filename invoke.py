@@ -22,13 +22,25 @@ def setConfig():
 #print(base64.b64encode(AUTH_KEY.encode()).decode())
 #print(getConfig())
 
-def invoke(name, body):
+def invoke(url, body):
+    response = request('POST', url, body=body, headers=HEADERS, auth=AUTH_KEY)
+    return response
+
+
+def invokeAction(name, body):
     setConfig()
     ACTION = name
-    BODY = body
     param_str = 'blocking=' + BLOCKING + '&&result=' + RESULT
     url = APIHOST + '/api/v1/namespaces/' + NAMESPACE + '/actions/' + ACTION + '?'  + param_str
-    response = request('POST', url, body=json.dumps(BODY), headers=HEADERS, auth=AUTH_KEY)
+    return invoke(url, json.dumps(body))
     #response = requests.post(url, json=PARAMS, params={'blocking': BLOCKING, 'result': RESULT}, headers=HEADERS, verify=False)
-    print(response)
+
+def invokeWeb(name, param, body):
+    param_str = 'blocking=' + BLOCKING + '&&result=' + RESULT
+    for key, value in param.items():
+        param_str = param_str + '&&' + str(key) + '=' + str(value)
+    url = APIHOST + '/api/v1/web/guest/' + str(name) + '?'  + param_str
+    return invoke(url, json.dumps(body))
+
+    
 
