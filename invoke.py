@@ -24,7 +24,7 @@ def setConfig():
 
 def invoke(url, body):
     res = request('POST', url, body=body, headers=HEADERS, auth=AUTH_KEY)
-    return res.read().decode()
+    return res
 
 def invokeAction(name, body):
     setConfig()

@@ -24,8 +24,8 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
     params_store = OrderedDict(sorted(params.items()))
     body_store = OrderedDict(sorted(body.items()))
 
-    # global reuse buffer
-    global rb
+    global rb          # global reuse buffer 
+    global time_start  # test start time
 
     t_start = time.time()
     # Check whether can we use reuse buffer
@@ -41,14 +41,16 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
                 raise Exception("Two matched items in edge reuse buffer!!")
             res = matched_item["Output"]
             t_end = time.time()
+            l_p.acquire()
             global hit_count
             hit_count += 1
-            print("Hit Times: " + str(hit_count))
-            l_p.acquire()
             writeProfileData( name, t_start, t_end)
             l_p.release()
-            print("Duration: " + str(t_end - t_start))
+            if i % 50 == 0:
+                print("Time: " + str(t_start - time_start) +  "  Invocation Time: " + str(t_end - t_start))
+                print("Hit Times: " + str(hit_count))
             return res
+
     if invoke_type == INVOKE_WEB:
         res = invokeWeb(name, params, body)
     elif invoke_type == INVOKE_ACTION:
@@ -64,10 +66,14 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
     if USE_REUSE_BUFFER:
         l_b.acquire()
         # Need to judge whether there is matched item again before writing
-        if len(matched_item.index) > 0:
-            print(str(i) + res + "\tDuration: " + str(t_end - t_start))
-            return res
         matched_item = rb.loc[ (rb['Function Name'] == name) & (rb['Params'] == params_store) & (rb['Body'] == body_store) ]
+        if len(matched_item.index) > 0:
+            if i % 50 == 0:
+                print("Time: " + str(t_start - time_start) +  "  Invocation Time: " + str(t_end - t_start))
+                print("Hit Times: " + str(hit_count))
+            l_b.release()
+            return res
+
         rb = rb.append({'Function Name': name, 'Params': params_store, 'Body': body_store, 'Output': res} , ignore_index=True)
         '''
         with open(r'reuse_buffer_edge.csv','a') as rb:
@@ -75,14 +81,14 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
 	    writer_rb.writerow([name, params, body, res])
         rb = pd.read_csv('./reuse_buffer_edge.csv')
         '''
-        print(rb.memory_usage().sum())
+        # print(rb.memory_usage().sum())
         # Need to judge whether to kick unused items out
         # If the buffer is full, kick the first a few elements out of the buffer
         if (not rb.empty) and rb.memory_usage().sum() > MAX_BUFFER_SIZE:
             idx = 0
             while (not rb.empty) and rb[idx:].memory_usage().sum() > MAX_BUFFER_SIZE:
                 idx += 1
-            print("Kick out first " + str(idx) + " rows.")
+            # print("Kick out first " + str(idx) + " rows.")
             rb = rb[idx:]
             '''
 	    rb.to_csv(r'./reuse_buffer_edge.csv', index=False)
@@ -90,7 +96,10 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
             '''
         l_b.release()
 
-    print(str(i) + res + "\tDuration: " + str(t_end - t_start))
+    if i % 50 == 0:
+        print("Time: " + str(t_start - time_start) +  "  Invocation Time: " + str(t_end - t_start))
+        if USE_REUSE_BUFFER:
+            print("Hit Times: " + str(hit_count))
     return res
 
 def initPrimes():
@@ -127,12 +136,14 @@ def randomInit(fun_choice):
     fun_options = {FUN_PRIMES: initPrimes, FUN_AUTOCOMPLETE: initAutoComplete, FUN_SENTIMENT: initSentiment}
     return fun_options[fun_choice]()
 
+
 profile_data = pd.DataFrame(columns= ['Function Name', 'Start Time', 'End Time'])
 profile_data.to_csv(r'./profile_data.csv', index = False)
 
-USE_REUSE_BUFFER = True
+USE_REUSE_BUFFER = False
 MAX_BUFFER_SIZE = 1 * 1024 * 1024
-print("Max buffer size: " + str(MAX_BUFFER_SIZE/1024) + "K")
+if USE_REUSE_BUFFER:
+    print("Max buffer size: " + str(MAX_BUFFER_SIZE/1024) + "K")
 
 global rb
 rb = pd.DataFrame(columns= ['Function Name', 'Params', 'Body', 'Output'])
@@ -145,17 +156,19 @@ random.seed()
 l_p = Lock()
 l_b = Lock()
 
-for i in range(10):
+global time_start
+time_start = time.time()
 
-    t_start = time.time()
-    #name, params, body = randomInit(FUN_AUTOCOMPLETE)
-    name, params, body = randomInit(FUN_PRIMES)
+for i in range(600):
+    name, params, body = randomInit(FUN_AUTOCOMPLETE)
+    #name, params, body = randomInit(FUN_PRIMES)
     #name, params, body = randomInit(FUN_SENTIMENT)
 
-    #Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, params, body, l_p, l_b)).start()
-    Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, body, l_p, l_b)).start()
+    Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, params, body, l_p, l_b)).start()
+    #Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, {'term': 'Ge'}, body, l_p, l_b)).start()
+    #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, body, l_p, l_b)).start()
     #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, {'num': 100}, l_p, l_b)).start()
-    time.sleep(0.1)
+    time.sleep(0.05)
 
 
 

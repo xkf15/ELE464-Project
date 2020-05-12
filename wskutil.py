@@ -33,6 +33,18 @@ import ssl
 import base64
 import socket
 
+import time
+import pandas as pd 
+from threading import Lock
+import random
+global rb
+global hit_count
+rb = pd.DataFrame(columns= ['Url', 'Body', 'Output'])
+l = Lock()
+hit_count = 0
+
+USE_REUSE_BUFFER = True
+MAX_BUFFER_SIZE = 1 * 1024 * 1024
 
 # global configurations, can control whether to allow untrusted certificates
 # on HTTPS connections
@@ -65,7 +77,31 @@ def request(method, urlString, body = '', headers = {}, auth = None, verbose = F
             print(body)
 
     try:
+        # Add random network delay
+        time.sleep(random.expovariate(40))
+
         conn.request(method, urlString, body, headers)
+
+        # read reuse buffer
+        global rb
+        body_store = body
+        if USE_REUSE_BUFFER:
+            l.acquire()
+            matched_item = rb.loc[ (rb['Url'] == urlString) & (rb['Body'] == body_store) ]
+            l.release()
+            if len(matched_item.index) > 0:
+                # print("Find Matched!")
+                if len(matched_item.index) > 1:
+                    raise Exception("Two matched items in edge reuse buffer!!")
+                res = matched_item["Output"]
+                t_end = time.time()
+                global hit_count
+                hit_count += 1
+                if hit_count % 20 == 0:
+                    print("Hit Times: " + str(hit_count))
+                return res
+
+        # Get response
         res = conn.getresponse()
         body = ''
         try:
@@ -84,7 +120,27 @@ def request(method, urlString, body = '', headers = {}, auth = None, verbose = F
             print('Body received:')
             print(res.read())
             print('========')
-        return res
+
+        # store Reuse Buffer
+        if USE_REUSE_BUFFER:
+            l.acquire()
+            # Need to judge whether there is matched item again before writing
+            matched_item = rb.loc[ (rb['Url'] == urlString) & (rb['Body'] == body_store) ]
+            if len(matched_item.index) > 0:
+                l.release()
+                return res.read().decode()
+
+            rb = rb.append({'Url': urlString, 'Body': body_store, 'Output': res.read().decode()} , ignore_index=True)
+            # Need to judge whether to kick unused items out
+            # If the buffer is full, kick the first a few elements out of the buffer
+            if (not rb.empty) and rb.memory_usage().sum() > MAX_BUFFER_SIZE:
+                idx = 0
+                while (not rb.empty) and rb[idx:].memory_usage().sum() > MAX_BUFFER_SIZE:
+                    idx += 1
+                rb = rb[idx:]
+            l.release()
+
+        return res.read().decode()
     except socket.timeout:
         return ErrorResponse(status = 500, error = 'request timed out at %d seconds' % timeout)
     except Exception as e:
