@@ -15,17 +15,21 @@ FUN_SENTIMENT = 2
 INVOKE_ACTION = 0
 INVOKE_WEB = 1
 
-def writeProfileData(name, t_start, t_end):
+def writeProfileData(name, t_start, t_end, ht):
+    global time_start
     with open(r'profile_data.csv','a') as fd:
         writer = csv.writer(fd)
-        writer.writerow([name, t_start, t_end])
+        writer.writerow([name, t_start - time_start, t_end - time_start, ht])
+    return
 
-def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
+def invokeParallel(i, invoke_type, name, params, body, l_1, l_2):
     params_store = OrderedDict(sorted(params.items()))
     body_store = OrderedDict(sorted(body.items()))
 
     global rb          # global reuse buffer 
     global time_start  # test start time
+    global l_p,l_b
+    global hit_count
 
     t_start = time.time()
     # Check whether can we use reuse buffer
@@ -42,9 +46,8 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
             res = matched_item["Output"]
             t_end = time.time()
             l_p.acquire()
-            global hit_count
             hit_count += 1
-            writeProfileData( name, t_start, t_end)
+            writeProfileData( name, t_start, t_end, hit_count )
             l_p.release()
             if i % 50 == 0:
                 print("Time: " + str(t_start - time_start) +  "  Invocation Time: " + str(t_end - t_start))
@@ -59,7 +62,7 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
 
     # Write profile data
     l_p.acquire()
-    writeProfileData( name, t_start, t_end)
+    writeProfileData( name, t_start, t_end, hit_count)
     l_p.release()
 
     # Write to reuse buffer
@@ -104,7 +107,7 @@ def invokeParallel(i, invoke_type, name, params, body, l_p, l_b):
 
 def initPrimes():
     name = 'primes'
-    num = random.randint(1, 10000000)
+    num = random.randint(9999000, 10000000)
     params = {}
     body = {'num': num}
     return name, params, body
@@ -137,11 +140,11 @@ def randomInit(fun_choice):
     return fun_options[fun_choice]()
 
 
-profile_data = pd.DataFrame(columns= ['Function Name', 'Start Time', 'End Time'])
+profile_data = pd.DataFrame(columns= ['Function Name', 'Start Time', 'End Time', 'Hit Times'])
 profile_data.to_csv(r'./profile_data.csv', index = False)
 
-USE_REUSE_BUFFER = False
-MAX_BUFFER_SIZE = 1 * 1024 * 1024
+USE_REUSE_BUFFER = True
+MAX_BUFFER_SIZE = 256 * 1024
 if USE_REUSE_BUFFER:
     print("Max buffer size: " + str(MAX_BUFFER_SIZE/1024) + "K")
 
@@ -153,22 +156,26 @@ global hit_count
 hit_count = 0
 
 random.seed()
+global l_p,l_b
 l_p = Lock()
 l_b = Lock()
 
 global time_start
 time_start = time.time()
 
-for i in range(600):
-    name, params, body = randomInit(FUN_AUTOCOMPLETE)
-    #name, params, body = randomInit(FUN_PRIMES)
-    #name, params, body = randomInit(FUN_SENTIMENT)
+ips = 100
+for ii in range( 3 ):
+    for i in range( ips * 15 ):
+        name, params, body = randomInit(FUN_AUTOCOMPLETE)
+        #name, params, body = randomInit(FUN_PRIMES)
+        #name, params, body = randomInit(FUN_SENTIMENT)
 
-    Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, params, body, l_p, l_b)).start()
-    #Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, {'term': 'Ge'}, body, l_p, l_b)).start()
-    #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, body, l_p, l_b)).start()
-    #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, {'num': 100}, l_p, l_b)).start()
-    time.sleep(0.05)
+        Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, params, body, l_p, l_b)).start()
+        #Thread(target=invokeParallel, args=(i, INVOKE_WEB, name, {'term': 'Ge'}, body, l_p, l_b)).start()
+        #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, body, l_p, l_b)).start()
+        #Thread(target=invokeParallel, args=(i, INVOKE_ACTION, name, params, {'num': 100}, l_p, l_b)).start()
+        time.sleep(1.0/ips)
+    time.sleep(15)
 
 
 

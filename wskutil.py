@@ -43,8 +43,8 @@ rb = pd.DataFrame(columns= ['Url', 'Body', 'Output'])
 l = Lock()
 hit_count = 0
 
-USE_REUSE_BUFFER = True
-MAX_BUFFER_SIZE = 1 * 1024 * 1024
+USE_REUSE_BUFFER = False
+MAX_BUFFER_SIZE = 64 * 1024
 
 # global configurations, can control whether to allow untrusted certificates
 # on HTTPS connections
@@ -98,6 +98,7 @@ def request(method, urlString, body = '', headers = {}, auth = None, verbose = F
                 global hit_count
                 hit_count += 1
                 if hit_count % 20 == 0:
+                    print("Buffer Usage: " + str(rb.memory_usage().sum()) + "/" + str(MAX_BUFFER_SIZE))
                     print("Hit Times: " + str(hit_count))
                 return res
 
